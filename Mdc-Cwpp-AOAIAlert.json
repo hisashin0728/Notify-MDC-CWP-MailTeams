@@ -1,0 +1,321 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "metadata": {
+        "title": "Notify-MDC-CWP-MailTeams",
+        "description": "This playbook will notify Microsoft Defender for Cloud Security Alerts to Email and Microsoft Teams.",
+        "lastUpdateTime": "2024-10-04T00:00:00.000Z",
+        "tags": [ "Security" ],
+        "author": {
+            "name": "Hisashi Nakada"
+        }
+    },
+    "parameters": {
+        "PlayBookName": {
+            "defaultValue": "Notify-MDC-CWP-MailTeams",
+            "type": "string"
+        },
+        "SendToEmailAddress": {
+            "defaultValue": "<username>@<domain>",
+            "type": "string"
+        }
+    },
+    "variables": {
+        "acsemailConnectionName": "[concat('acsemail-', parameters('PlaybookName'))]",
+        "ascalertConnectionName": "[concat('ascalert-', parameters('PlaybookName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('ascalertConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "displayName": "[parameters('PlayBookName')]",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/ascalert')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[variables('acsemailConnectionName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "displayName": "[parameters('PlayBookName')]",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/acsemail')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('PlaybookName')]",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "LogicAppsCategory": "security"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/connections', variables('acsemailConnectionName'))]",
+                "[resourceId('Microsoft.Web/connections', variables('ascalertConnectionName'))]"
+            ],
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        },
+                        "MLEmailAddress": {
+                            "defaultValue": "[parameters('SendToEmailAddress')]",
+                            "type": "String"
+                        }
+                    },
+                    "triggers": {
+                        "When_an_Azure_Security_Center_Alert_is_created_or_triggered": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['ascalert']['connectionId']"
+                                    }
+                                },
+                                "path": "/Microsoft.Security/Alert/subscribe"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "HTMLBody": {
+                            "runAfter": {
+                                "HTTP_3": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "HTMLbody",
+                                        "type": "string",
+                                        "value": "<!DOCTYPE html>\n<html lang=\"ja\">\n<head>\n<meta charset=\"UTF-8\">\n<title>Security Policy alert</title>\n<style>\n  body { font-family: Arial, sans-serif; }\n  .header { background-color: #4CAF50; color: white; padding: 1px; text-align: center; }\n  .content { margin: 10px; padding: 10px; }\n  .footer { background-color: #f2f2f2; color: black; padding: 1px; text-align: center; }\n</style>\n</head>\n<body>\n  <div class=\"header\">\n    <h2>Security Policy alert</h2>\n  </div>\n  <div class=\"content\">\n    <p>Microsoft Defender for Cloud で アラートを検知しました</p>\n    <table>\n      <tr>\n        <td><strong>Detected Time</strong></td>\n        <td>@{triggerBody()?['TimeGenerated']}</td>\n      </tr>\n      <tr>\n        <td><strong>アラート名</strong></td>\n        <td>@{triggerBody()?['AlertDisplayName']}</td>\n      </tr>\n      <tr>\n        <td><strong>説明</strong></td>\n        <td>@{body('HTTP')?['choices'][0]['message']['content']}</td>\n      </tr>\n      <tr>\n        <td><strong>修復方法</strong></td>\n        <td>@{body('HTTP_2')?['choices'][0]['message']['content']}</td>\n      </tr>\n      <tr>\n        <td><strong>URL to Defender for Cloud</strong></td>\n        <td><a href=\"@{triggerBody()?['AlertUri']}\">CLICK</a></td>\n      </tr>\n      <tr>\n        <td><strong>検知 Defender 元</strong></td>\n        <td>@{triggerBody()?['ExtendedProperties']?['ProductComponentName']}</td>\n      </tr>\n      <tr>\n        <td><strong>エンティティ種別</strong></td>\n        <td>@{triggerBody()?['ExtendedProperties']?['resourceType']}</td>\n      </tr>\n      <tr>\n        <td><strong>リソースID</strong></td>\n        <td>@{triggerBody()?['ExtendedProperties']?['EffectiveAzureResourceId']}</td>\n      </tr>\n    </table>  \n  </div>\n  <div class=\"footer\">\n    <p>2024 XXXX Corporation</p>\n  </div>\n</body>\n</html>"
+                                    }
+                                ]
+                            }
+                        },
+                        "HTTP": {
+                            "runAfter": {},
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://cognitiveservices.azure.com",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "body": {
+                                    "frequency_penalty": 2,
+                                    "max_tokens": 1000,
+                                    "messages": [
+                                        {
+                                            "content": "You are a Security Analyst.",
+                                            "role": "system"
+                                        },
+                                        {
+                                            "content": "Please translate in Japanese.",
+                                            "role": "user"
+                                        },
+                                        {
+                                            "content": "@{triggerBody()?['Description']}",
+                                            "role": "assistant"
+                                        }
+                                    ],
+                                    "stop": null,
+                                    "temperature": 0
+                                },
+                                "headers": {
+                                    "Content-Type": "application/json"
+                                },
+                                "method": "POST",
+                                "uri": "https://ai-azurecsa-ae.openai.azure.com/openai/deployments/gpt-4/chat/completions?api-version=2023-05-15"
+                            }
+                        },
+                        "HTTP_2": {
+                            "runAfter": {
+                                "HTTP": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://cognitiveservices.azure.com",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "body": {
+                                    "frequency_penalty": 2,
+                                    "max_tokens": 1000,
+                                    "messages": [
+                                        {
+                                            "content": "You are a Security Analyst.",
+                                            "role": "system"
+                                        },
+                                        {
+                                            "content": "Please translate in 100 Japanese words. You need to explain to  non-security engineers.",
+                                            "role": "user"
+                                        },
+                                        {
+                                            "content": "@{triggerBody()?['RemediationSteps']?[0]}",
+                                            "role": "assistant"
+                                        }
+                                    ],
+                                    "stop": null,
+                                    "temperature": 0
+                                },
+                                "headers": {
+                                    "Content-Type": "application/json"
+                                },
+                                "method": "POST",
+                                "uri": "https://dummy.openai.azure.com/openai/deployments/dummy/chat/completions?api-version=2023-05-15"
+                            }
+                        },
+                        "HTTP_3": {
+                            "runAfter": {
+                                "HTTP_2": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "authentication": {
+                                    "audience": "https://cognitiveservices.azure.com",
+                                    "type": "ManagedServiceIdentity"
+                                },
+                                "body": {
+                                    "frequency_penalty": 2,
+                                    "max_tokens": 1000,
+                                    "messages": [
+                                        {
+                                            "content": "You are a Security Analyst.",
+                                            "role": "system"
+                                        },
+                                        {
+                                            "content": "`Please suggest ideas how to resolve this issus in Japanese.",
+                                            "role": "user"
+                                        },
+                                        {
+                                            "content": "@{triggerBody()?['AlertDisplayName']},https://learn.microsoft.com/en-us/azure/defender-for-cloud/alerts-resource-manager",
+                                            "role": "assistant"
+                                        }
+                                    ],
+                                    "stop": null,
+                                    "temperature": 0
+                                },
+                                "headers": {
+                                    "Content-Type": "application/json"
+                                },
+                                "method": "POST",
+                                "uri": "https://ai-azurecsa-ae.openai.azure.com/openai/deployments/gpt-4/chat/completions?api-version=2023-05-15"
+                            }
+                        },
+                        "IncomingWebhook": {
+                            "runAfter": {
+                                "InitAdaptiveCard": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Http",
+                            "inputs": {
+                                "body": "@variables('InitAdaptiveCard')",
+                                "headers": {
+                                    "Content-Type": "application/json"
+                                },
+                                "method": "POST",
+                                "uri": "https://dummywebhook.azure.com"
+                            }
+                        },
+                        "InitAdaptiveCard": {
+                            "runAfter": {
+                                "HTTP_3": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "InitAdaptiveCard",
+                                        "type": "string",
+                                        "value": "{\n   \"type\":\"message\",\n   \"attachments\": [\n     {\n       \"contentType\": \"application/vnd.microsoft.card.adaptive\",\n       \"content\":\n         {\n             \"$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",\n             \"type\": \"AdaptiveCard\",\n             \"version\": \"1.4\",\n             \"msteams\": {\n                 \"width\": \"Full\"\n             },\n             \"body\": [\n                 {\n                     \"type\": \"Container\",\n                     \"items\": [\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"Defender for Cloud アラート\",\n                             \"weight\": \"Bolder\",\n                             \"size\": \"Medium\"\n                         },\n                         {\n                             \"type\": \"ColumnSet\",\n                             \"columns\": [\n                                 {\n                                     \"type\": \"Column\",\n                                     \"width\": \"auto\",\n                                     \"items\": [\n                                         {\n                                             \"type\": \"Image\",\n                                             \"url\": \"https://connectoricons-prod.azureedge.net/releases/v1.0.1632/1.0.1632.3274/ascalert/icon.png\",\n                                             \"size\": \"Small\",\n                                             \"style\": \"Person\"\n                                         }\n                                     ]\n                                 },\n                                 {\n                                     \"type\": \"Column\",\n                                     \"width\": \"stretch\",\n                                     \"items\": [\n                                         {\n                                             \"type\": \"TextBlock\",\n                                             \"spacing\": \"None\",\n                                             \"text\": \"@{triggerBody()?['StartTimeUtc']}\",\n                                             \"isSubtle\": true,\n                                             \"wrap\": true\n                                         }\n                                     ]\n                                 }\n                             ]\n                         }\n                     ]\n                 },\n                 {\n                     \"type\": \"Container\",\n                     \"items\": [\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"アラート名\",\n                             \"color\": \"warning\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"@{triggerBody()?['AlertDisplayName']}\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"重要度\",\n                             \"color\": \"warning\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"@{triggerBody()?['Severity']}\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"アラート説明(AOAIによる和訳)\",\n                             \"color\": \"warning\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"@{body('HTTP')?['choices'][0]['message']['content']}\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"検知 Defender 元\",\n                             \"color\": \"warning\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"@{triggerBody()?['ExtendedProperties']?['ProductComponentName']}\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"エンティティ種別\",\n                             \"color\": \"warning\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"@{triggerBody()?['ExtendedProperties']?['resourceType']}\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"リソースID\",\n                             \"color\": \"warning\",\n                             \"wrap\": true\n                         },\n                         {\n                             \"type\": \"TextBlock\",\n                             \"text\": \"@{triggerBody()?['ExtendedProperties']?['EffectiveAzureResourceId']}\",\n                             \"wrap\": true\n                         }\n                     ]\n                 }\n             ],\n             \"actions\": [\n                 {\n                     \"type\": \"Action.OpenUrl\",\n                     \"title\": \"Click to Microsoft Defender for Cloud\",\n                     \"url\": \"@{triggerBody()?['AlertUri']}\"\n                 }\n             ]\n         }\n     }\n   ]\n }"
+                                    }
+                                ]
+                            }
+                        },
+                        "Send_email": {
+                            "runAfter": {
+                                "HTMLBody": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "content": {
+                                        "html": "<p>@{variables('HTMLbody')}</p>",
+                                        "subject": "TEST"
+                                    },
+                                    "importance": "Normal",
+                                    "recipients": {
+                                        "to": [
+                                            {
+                                                "address": "@parameters('MLEmailAddress')"
+                                            }
+                                        ]
+                                    },
+                                    "senderAddress": ""
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['acsemail']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/emails:sendGAVersion",
+                                "queries": {
+                                    "api-version": "2023-03-31"
+                                }
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "acsemail": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('acsemailConnectionName'))]",
+                                "connectionName": "acsemail",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/acsemail')]"
+                            },
+                            "ascalert": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', variables('ascalertConnectionName'))]",
+                                "connectionName": "ascalert",
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', resourceGroup().location, '/managedApis/ascalert')]"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
