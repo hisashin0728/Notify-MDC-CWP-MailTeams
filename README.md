@@ -8,7 +8,10 @@
 ![image](https://github.com/user-attachments/assets/72694942-5d88-4d62-8d13-d02a30b0cac4)
 
 # Deploy To Azure
+> 以下ボタンより、ARMテンプレートを展開して導入して下さい
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)]https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fhisashin0728%2FNotify-MDC-CWP-MailTeams%2Frefs%2Fheads%2Fmain%2FMdc-Cwpp-AOAIAlert.json)
 
+- 
 
 # 必要なサービス
 本構成を実現するために、以下 Azure リソースが必要となります。
