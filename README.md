@@ -12,8 +12,24 @@
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fhisashin0728%2FNotify-MDC-CWP-MailTeams%2Frefs%2Fheads%2Fmain%2FMdc-Cwpp-AOAIAlert.json)
 
-- aaa
-- bbb
+- ロジックアプリを展開するサブスクリプション / リソースグループを指定
+- リージョンはお客様の環境に合わせて設定
+- プレイブック名は任意です (デフォルトは ``Notify-MDC-CWP-MailTeams``)
+- Send To Email Address は、通知する先の Email アドレスを設定して下さい
+
+![image](https://github.com/user-attachments/assets/5b602c99-70d8-4c23-a546-11c89ef3d605)
+
+# デプロイ後の設定作業
+> デプロイ後、以下設定を行って下さい。
+
+- ロジックアプリのマネージド ID に OpenAI ユーザーの RBAC 権限を付与
+  - 展開されたロジックアプリの「ID」を選択
+
+![image](https://github.com/user-attachments/assets/dd0d4591-e30d-4080-acfb-5ceb503d4ab1)
+
+  - 「Azure ロールの割り当て」から、Azure OpenAI サービスがあるサブスクリプションに対して、「Azure OpenAI ユーザー」権限を付与
+
+![image](https://github.com/user-attachments/assets/78660148-0648-4a19-8d7c-90b598a33d30)
 
 # 必要なサービス
 本構成を実現するために、以下 Azure リソースが必要となります。
